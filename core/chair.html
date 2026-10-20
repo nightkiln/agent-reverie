@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reverie Dais</title>
+<style>
+  :root { --bg:#f6f5f2; --panel:#fff; --ink:#1d1d1f; --muted:#6b6b70; --line:#e2e0da; --accent:#4b5bd6; --warn:#b4231a; --ring:#9a6b00; --chair:#0f7a55; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141416; --panel:#1d1d20; --ink:#ececee; --muted:#9a9aa2; --line:#2c2c31; --accent:#8b97ff; --warn:#ff7b70; --ring:#e3b341; --chair:#4fd1a1; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  header { position:sticky; top:0; z-index:1; display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:16px; margin:0 8px 0 0; }
+  select, input, textarea, button { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+  button { cursor:pointer; background:var(--panel); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.danger { color:var(--warn); }
+  main { max-width:900px; margin:0 auto; padding:16px; }
+  #status { color:var(--muted); font-size:13px; }
+  #people { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:2px 10px; font-size:13px; background:var(--panel); }
+  #log { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+  #log li { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 12px; }
+  #log .meta { font-size:12px; color:var(--muted); display:flex; gap:8px; flex-wrap:wrap; }
+  #log .from { font-weight:600; color:var(--ink); }
+  #log .text { white-space:pre-wrap; overflow-wrap:anywhere; margin-top:2px; }
+  #log li.chair { border-left:3px solid var(--chair); }
+  #log li.ring { border-left:3px solid var(--ring); }
+  #log li.failed { border-left:3px solid var(--warn); }
+  #log li.system { background:transparent; border-style:dashed; }
+  #log li.draft { opacity:.6; font-style:italic; border-style:dashed; }
+  #log li.quiet { opacity:.75; }
+  form.compose { position:sticky; bottom:0; background:var(--bg); padding:12px 0; display:grid; gap:8px; }
+  form.compose textarea { width:100%; min-height:64px; resize:vertical; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .error { color:var(--warn); font-size:13px; }
+  .error:empty { display:none; }
+  .hint { color:var(--muted); font-size:13px; }
+  :disabled { opacity:.45; cursor:not-allowed; }
+  #closed { color:var(--muted); font-size:14px; }
+  #presence { display:flex; gap:10px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-left:auto; }
+  #presence .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; background:var(--line); border:1px solid var(--muted); }
+  #presence .on .dot { background:var(--chair); border-color:var(--chair); }
+  #presence .on { color:var(--ink); }
+  dialog { border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dais</h1>
+  <select id="project" aria-label="Project"><option value="">All projects</option></select>
+  <select id="night" aria-label="Room"></select>
+  <button id="newNight">New Room</button>
+  <span id="status"></span>
+  <span id="presence" aria-label="Signs: who is listening"></span>
+</header>
+<main>
+  <div id="people"></div>
+  <ul id="log"></ul>
+  <form class="compose" id="compose">
+    <div id="closed" hidden>This Room is woken and rests in the Crypt. <button type="button" class="primary" id="newNightHere">New Room</button> to start another.</div>
+    <textarea id="text" placeholder="Speak as the chair… (when closing: write the decisions here, they go into the memo)" aria-label="Note"></textarea>
+    <div class="row">
+      <label>To <input id="to" placeholder="everyone, or alpha,beta" size="22"></label>
+      <label title="Your note goes only to this agent, who restates it formally to the meeting"><input type="checkbox" id="formal"> Formal via</label>
+      <select id="formalBy" aria-label="Agent who restates your note"></select>
+      <label id="quietBox" title="Hush: answer without lifting this Rite to the top" hidden><input type="checkbox" id="quiet"> Hush</label>
+      <button class="primary" type="submit">Post</button>
+      <button type="button" id="ring">Bell</button>
+      <button type="button" id="pin" title="Star: keep this Rite on top of its Fane" hidden>Star</button>
+    </div>
+    <div class="row">
+      <span class="hint">To close:</span>
+      <label title="This agent drafts the outcome for you; you edit it before closing">Secretary <select id="secretary" aria-label="Secretary"></select></label>
+      <button type="button" id="draftMemo">Draft memo</button>
+      <button type="button" class="danger" id="wake" style="margin-left:auto" title="Close this Room; the agents keep listening for the next one">Wake (close)</button>
+      <button type="button" class="danger" id="dawn" title="Close this Room and send the agents home: their watchers stop until you bring them back">Dawn (close, agents leave)</button>
+    </div>
+    <span class="error" id="error"></span>
+  </form>
+</main>
+<dialog id="openDialog">
+  <form method="dialog" id="openForm" style="display:grid;gap:8px;min-width:min(420px,80vw)">
+    <strong>Open a Room</strong>
+    <input id="topic" placeholder="topic, e.g. rig-review" required pattern="[a-z0-9][a-z0-9-]{0,47}">
+    <input id="newProject" list="projects" placeholder="project (optional), e.g. my-app" pattern="[a-z0-9][a-z0-9-]{0,47}">
+    <select id="newMode" aria-label="Mode">
+      <option value="meeting">Night: you chair it, agents answer while you're here</option>
+      <option value="board">Rite: no chair, anyone posts, replies come later or never</option>
+    </select>
+    <datalist id="projects"></datalist>
+    <textarea id="agenda" placeholder="Agenda"></textarea>
+    <div class="row"><button class="primary" value="open">Open</button><button value="cancel" formnovalidate>Cancel</button></div>
+  </form>
+</dialog>
+<script>
+const $ = (id) => document.getElementById(id);
+let night = '', cursor = 0, open = false, polling = null, armed = null, armedTimer = null, chair = '';
+let modes = {}, mode = null, rooms = []; // each mode's settings from the core, and the Room list
+let drafts = new Map(); // formal draft id -> its meta line, until the agent restates it
+let outcome = null, notesSince = 0; // the newest memo draft, and how many notes came after it
+let roomNotes = 0, openedAt = null; // for a mode with limits: notes so far, and when the Room opened
+const saved = (() => { try { return JSON.parse(localStorage.getItem('formal') ?? '{}'); } catch { return {}; } })();
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+const fail = (err) => { $('error').textContent = err.message; };
+const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
+
+async function loadNights(select) {
+  const all = await api('/api/nights');
+  const projects = [...new Set(all.map((n) => n.project).filter(Boolean))].sort();
+  const filter = $('project');
+  if (select) filter.value = all.find((n) => n.night === select)?.project ?? filter.value;
+  const want = filter.value || saved.project || '';
+  filter.replaceChildren(new Option('All projects', ''), ...projects.map((p) => new Option(p, p)));
+  filter.value = projects.includes(want) ? want : '';
+  $('projects').replaceChildren(...projects.map((p) => new Option(p, p)));
+  const nights = all.filter((n) => !filter.value || n.project === filter.value);
+  // In one Fane: starred first, then each by its mode's order, newest first.
+  if (filter.value) {
+    const key = (n) => (modes[n.mode]?.order === 'rise' ? n.rise : n.night.slice(0, 10)) ?? '';
+    nights.sort((a, b) => Number(b.pinned) - Number(a.pinned) || key(b).localeCompare(key(a)) || b.night.localeCompare(a.night));
+  }
+  const el = $('night');
+  el.replaceChildren(...nights.map((n) => new Option(`${n.pinned ? '★ ' : ''}${n.project && !filter.value ? `[${n.project}] ` : ''}${n.night} · ${modes[n.mode]?.label ?? n.mode}${n.open ? '' : ' (Crypt)'}`, n.night)));
+  rooms = all;
+  const pick = select || night || nights.findLast((n) => n.open)?.night || nights.at(-1)?.night || '';
+  if (pick) el.value = pick;
+  if (pick !== night) switchTo(pick);
+}
+
+function switchTo(name) {
+  night = name; cursor = 0; open = false; mode = null;
+  $('log').replaceChildren(); $('people').replaceChildren(); $('formalBy').replaceChildren(); $('secretary').replaceChildren(); drafts = new Map(); outcome = null; notesSince = 0; roomNotes = 0; openedAt = null; $('error').textContent = '';
+  poll();
+}
+
+function render(e) {
+  const li = document.createElement('li');
+  const failed = e.kind === 'note' && e.text?.startsWith('[delivery-failed]');
+  li.className = [e.from === chair ? 'chair' : '', e.kind === 'ring' ? 'ring' : '', failed ? 'failed' : '', e.quiet ? 'quiet' : '', ['open', 'lamp', 'wake', 'pin'].includes(e.kind) ? 'system' : ''].join(' ');
+  const meta = document.createElement('div'); meta.className = 'meta';
+  const from = document.createElement('span'); from.className = 'from'; from.textContent = e.from;
+  const room = (e.kind === 'open' ? modes[e.mode ?? 'meeting'] : mode)?.label ?? 'Room';
+  const what = {
+    open: `opened the ${room}`, lamp: 'lit a lamp (joined)', ring: `rang the Bell for ${e.to.join(', ')}`,
+    wake: e.expired ? `the sweep closed the ${room}` : e.dismiss ? `closed the ${room} at Dawn; the agents' watchers stop` : `woke the ${room}`,
+    pin: e.text === 'on' ? 'starred it' : 'took its star away',
+    note: [e.to.includes('*') ? '' : `→ ${e.to.join(', ')}`, e.quiet ? 'hush' : ''].filter(Boolean).join(' · '),
+  }[e.kind];
+  const part = (text) => { const s = document.createElement('span'); s.textContent = text; return s; };
+  const restates = e.kind === 'note' && drafts.has(e.replyTo) && e.from === drafts.get(e.replyTo).agent;
+  meta.append(part(`#${e.id}`), from, ...[what, e.replyTo ? `re #${e.replyTo}` : '', restates ? `for ${chair}` : '', new Date(e.time).toLocaleTimeString()].filter(Boolean).map(part));
+  li.append(meta);
+  if (e.ask) {
+    li.classList.add('draft');
+    const wait = part(e.ask === 'formal' ? `draft, waiting for ${e.to[0]} to restate it` : `waiting for ${e.to[0]} to draft the memo`); meta.append(wait);
+    drafts.set(e.id, { agent: e.to[0], ask: e.ask, wait });
+  }
+  if (restates && drafts.get(e.replyTo).ask === 'formal') {
+    li.classList.add('chair');
+    const draft = drafts.get(e.replyTo); draft.done = true; draft.wait.textContent = `restated by ${draft.agent} in #${e.id}`;
+  }
+  if (restates && drafts.get(e.replyTo).ask === 'outcome') {
+    li.classList.add('draft');
+    // A draft covers every note before it; Wake warns about any after it.
+    const draft = drafts.get(e.replyTo); draft.done = true; draft.wait.textContent = `drafted by ${draft.agent} in #${e.id}, covers up to #${e.id - 1}`;
+    outcome = { agent: draft.agent, id: e.id }; notesSince = 0;
+    const body = e.text.replace(/^Draft (memo|outcome):\s*/i, '');
+    const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use as outcome';
+    use.onclick = () => { $('text').value = body; $('text').focus(); };
+    li.append(use);
+    if (!$('text').value.trim()) $('text').value = body;
+  }
+  if (e.kind === 'note' && outcome && e.id > outcome.id) notesSince++;
+  if (e.kind === 'note') roomNotes++;
+  if (e.kind === 'open') openedAt = Date.parse(e.time);
+  if (e.text && e.kind !== 'pin') { const t = document.createElement('div'); t.className = 'text'; t.textContent = e.text; li.append(t); }
+  $('log').append(li);
+}
+
+function updatePeople(events) {
+  for (const e of events) if (e.kind === 'lamp' && ![...$('people').children].some((c) => c.textContent === e.from)) {
+    const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = e.from; $('people').append(chip);
+    if (e.from !== chair) {
+      $('formalBy').append(new Option(e.from, e.from)); if (e.from === saved.by) $('formalBy').value = e.from;
+      $('secretary').append(new Option(e.from, e.from)); if (e.from === saved.secretary) $('secretary').value = e.from;
+    }
+  }
+}
+
+// One poll at a time: overlapping polls would render the same events twice.
+function poll() { return (polling ??= pollOnce().finally(() => { polling = null; })); }
+
+async function pollOnce() {
+  if (!night) { $('status').textContent = 'No Rooms yet.'; $('closed').hidden = false; return; }
+  try {
+    const asked = night;
+    const events = await api(`/api/events?night=${encodeURIComponent(night)}&since=${cursor}`);
+    const atBottom = innerHeight + scrollY >= document.body.scrollHeight - 40;
+    if (asked !== night) return; // switched Nights while this fetch was out
+    if (events[0]?.kind === 'open') mode = modes[events[0].mode ?? 'meeting'] ?? null;
+    for (const e of events) if (e.id > cursor) { render(e); cursor = e.id; }
+    updatePeople(events);
+    if (events.length) open = events.at(-1).kind !== 'wake';
+    else if (cursor === 0) open = false;
+    if (cursor && events.length && atBottom) scrollTo(0, document.body.scrollHeight);
+    $('status').textContent = `${mode?.label ?? 'Room'} · ${open ? 'open · live' : 'woken, in the Crypt'}`;
+    // A mode with limits: how much of this Room is left before the sweep closes it.
+    const lim = mode?.limits;
+    if (open && lim) {
+      const left = [];
+      if (lim.notes) left.push(`${roomNotes}/${lim.notes} notes`);
+      if (lim.days && openedAt) left.push(`${Math.max(0, Math.ceil(lim.days - (Date.now() - openedAt) / 864e5))} days left`);
+      if (left.length) $('status').textContent += ` · ${left.join(' · ')}`;
+    }
+    for (const el of $('compose').querySelectorAll('textarea, input, .row button')) el.disabled = !open;
+    // Offer only what this Room's mode allows; the core's settings decide.
+    const asks = mode?.asks ?? [], can = mode?.capabilities ?? [];
+    for (const id of ['formal', 'formalBy']) if (!asks.includes('formal')) $(id).disabled = true;
+    for (const id of ['secretary', 'draftMemo']) if (!asks.includes('outcome')) $(id).disabled = true;
+    if (!can.includes('bell')) $('ring').disabled = true;
+    $('quietBox').hidden = !can.includes('quiet');
+    $('pin').hidden = !can.includes('pin');
+    $('pin').textContent = starred() ? 'Unstar' : 'Star';
+    $('closed').hidden = open;
+  } catch (err) { $('status').textContent = `Offline: ${err.message}`; }
+}
+
+$('night').onchange = (e) => switchTo(e.target.value);
+$('formal').checked = !!saved.on;
+$('formal').onchange = $('formalBy').onchange = $('secretary').onchange = () => {
+  saved.on = $('formal').checked; if ($('formalBy').value) saved.by = $('formalBy').value;
+  if ($('secretary').value) saved.secretary = $('secretary').value;
+  try { localStorage.setItem('formal', JSON.stringify(saved)); } catch {}
+};
+$('compose').onsubmit = async (e) => {
+  e.preventDefault(); $('error').textContent = '';
+  const text = $('text').value.trim(); if (!text) return;
+  const by = $('formal').checked && $('formalBy').value;
+  if ($('formal').checked && !by) return fail(new Error('Nobody has joined yet to restate your note.'));
+  const quiet = !$('quietBox').hidden && $('quiet').checked;
+  const note = by ? { night, text, to: [by], ask: 'formal', for: list($('to').value) } : { night, text, to: list($('to').value), ...(quiet ? { quiet } : {}) };
+  try { await api('/api/note', note); $('text').value = ''; $('quiet').checked = false; poll(); } catch (err) { fail(err); }
+};
+$('ring').onclick = async () => {
+  $('error').textContent = '';
+  const to = list($('to').value); if (!to.length) return fail(new Error('Put the codenames to ring in "To".'));
+  try { await api('/api/ring', { night, to, text: $('text').value.trim() }); $('text').value = ''; poll(); } catch (err) { fail(err); }
+};
+const starred = () => !!rooms.find((n) => n.night === night)?.pinned;
+$('pin').onclick = async () => {
+  $('error').textContent = '';
+  try { await api('/api/pin', { night, on: !starred() }); await loadNights(night); poll(); } catch (err) { fail(err); }
+};
+$('draftMemo').onclick = async () => {
+  $('error').textContent = '';
+  const by = $('secretary').value; if (!by) return fail(new Error('Nobody has joined yet to draft the memo.'));
+  try { await api('/api/note', { night, to: [by], ask: 'outcome', text: 'Please draft the outcome of this Night for the memo.' }); poll(); } catch (err) { fail(err); }
+};
+// Wake closes the Room; Dawn also stops every agent's watcher.
+const closeButtons = { wake: 'Wake (close)', dawn: 'Dawn (close, agents leave)' };
+for (const id of Object.keys(closeButtons)) $(id).onclick = async () => {
+  $('error').textContent = '';
+  // Two clicks to close, so one misclick can't end a meeting.
+  if (armed !== id) {
+    disarm();
+    const warn = wakeWarning();
+    const what = id === 'dawn' ? 'close and send every agent home' : 'close';
+    if (warn) $('error').textContent = `${warn} Click again to ${what} anyway.`;
+    $(id).textContent = `Click again to ${what}`; armed = id; armedTimer = setTimeout(disarm, warn ? 10000 : 4000); return;
+  }
+  disarm();
+  try { await api('/api/wake', { night, text: $('text').value.trim(), ...(id === 'dawn' ? { dismiss: true } : {}) }); $('text').value = ''; await poll(); loadNights(night); } catch (err) { fail(err); }
+};
+// What the outcome may be missing: a memo draft still owed, or notes newer than the draft.
+function wakeWarning() {
+  const pending = [...drafts].filter(([, d]) => d.ask === 'outcome' && !d.done).map(([id, d]) => `${d.agent} (asked in #${id})`);
+  if (pending.length) return `Still waiting for the memo draft from ${pending.join(', ')}.`;
+  if (notesSince) return `${notesSince} note${notesSince === 1 ? ' was' : 's were'} written after ${outcome.agent}'s draft (#${outcome.id}) and may be missing from it.`;
+  return '';
+}
+function disarm() { clearTimeout(armedTimer); armed = null; for (const [id, label] of Object.entries(closeButtons)) $(id).textContent = label; }
+$('newNight').onclick = $('newNightHere').onclick = () => { $('newProject').value = $('project').value; $('openDialog').showModal(); };
+$('project').onchange = () => {
+  saved.project = $('project').value;
+  try { localStorage.setItem('formal', JSON.stringify(saved)); } catch {}
+  switchTo(''); loadNights();
+};
+$('openForm').onsubmit = async (e) => {
+  if (e.submitter?.value !== 'open') return;
+  try { const ev = await api('/api/open', { topic: $('topic').value.trim(), agenda: $('agenda').value.trim(), project: $('newProject').value.trim(), mode: $('newMode').value }); $('topic').value = $('agenda').value = ''; loadNights(ev.night); } catch (err) { fail(err); }
+};
+
+function ago(iso) {
+  const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
+  return s < 120 ? `${s}s ago` : s < 7200 ? `${Math.round(s / 60)}m ago` : s < 172800 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+}
+// Green: that agent's watcher is running and would hear a ring now.
+async function loadPresence() {
+  try {
+    const all = await api('/api/presence');
+    $('presence').replaceChildren(...all.map((p) => {
+      const el = document.createElement('span'); el.className = p.listening ? 'on' : '';
+      el.title = p.listening ? `listening since ${new Date(p.since).toLocaleString()}` : `not listening; last seen ${new Date(p.seen).toLocaleString()}`;
+      const dot = document.createElement('span'); dot.className = 'dot';
+      el.append(dot, p.listening ? p.codename : `${p.codename} (${ago(p.seen)})`);
+      return el;
+    }));
+  } catch {}
+}
+
+// The chair's codename and each mode's settings come from the core, so the
+// page works for any room and shows only what a mode allows.
+Promise.all([api('/api/chair'), api('/api/modes')]).then(([{ chair: name }, all]) => {
+  chair = name; modes = all;
+  $('text').placeholder = `Speak as ${chair}… (when closing: write the decisions here, they go into the memo)`;
+  loadNights();
+}).catch(fail);
+loadPresence();
+setInterval(poll, 1000);
+setInterval(loadPresence, 10000);
+setInterval(() => loadNights(), 10000);
+</script>
+</body>
+</html>

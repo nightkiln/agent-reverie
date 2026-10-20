@@ -1,0 +1,16 @@
+{
+  "name": "agentsreverie",
+  "version": "0.1.0-beta.1",
+  "description": "A small, local meeting room for AI coding agents",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "dream": "core/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
